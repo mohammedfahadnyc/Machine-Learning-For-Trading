@@ -1,43 +1,47 @@
-import pandas as pd
+import numpy as np
 import datetime as dt
-from util import get_data
+import pandas as pd
+from util import get_data, plot_data
+
 
 def author():
-    return 'mfahad7'  # Replace with your GT username
-
-def testPolicy(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31), sv=100000):
     """
-    Implements the Theoretically Optimal Strategy (TOS), which returns the trades DataFrame.
-
-    Parameters:
-        symbol - The stock symbol to act on
-        sd     - A DateTime object that represents the start date
-        ed     - A DateTime object that represents the end date
-        sv     - Start value of the portfolio
-
-    Returns:
-        trades - A single column DataFrame, indexed by date, representing trades per day.
-                 Legal values are +1000 (BUY), -1000 (SELL), and 0.0 (HOLD).
+    :return: The GT username of the student
+    :rtype: str
     """
-    # Fetch price data for the given symbol in the specified date range
-    dates = pd.date_range(sd, ed)
-    prices = get_data([symbol], dates)
-    prices = prices[symbol]  # Only keep the symbol's price data
+    return "mfahad7"
 
-    # Initialize the trades DataFrame
-    trades = pd.DataFrame(0.0, index=prices.index, columns=[symbol])
 
-    # Loop over prices and generate trades based on perfect foresight
-    for i in range(1, len(prices)):
-        if prices[i] > prices[i - 1]:
-            trades.iloc[i] = 1000  # BUY
-        elif prices[i] < prices[i - 1]:
-            trades.iloc[i] = -1000  # SELL
-        # If the price stays the same, do nothing (0 by default)
+def testPolicy(symbol="AAPL", sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011, 12, 31), sv=100000):
+    """
+    Theoretically Optimal Strategy
+    :param symbol: Stock symbol
+    :param sd: Start date
+    :param ed: End date
+    :param sv: Start value of the portfolio
+    :return: DataFrame with trades
+    """
+
+    # Fetch adjusted close data
+    stock_data = get_data([symbol], pd.date_range(sd, ed), colname="Adj Close").drop("SPY", axis=1)
+
+    # Calculate daily returns
+    daily_returns = stock_data.diff()
+
+    # Buy if returns are positive, Sell if negative
+    trade_signals = daily_returns.applymap(lambda x: "BUY" if x > 0 else "SELL" if x < 0 else 0).shift(-1)
+
+    trades = pd.DataFrame(data=0, index=stock_data.index, columns=["Shares"])
+
+    #trade data based on signal
+    for i in range(trade_signals.shape[0]):
+        if trade_signals.iloc[i, 0] == "BUY":
+            trades.iloc[i, 0] = 1000
+        elif trade_signals.iloc[i, 0] == "SELL":
+            trades.iloc[i, 0] = -1000
+
+        # Close next day
+        if i + 1 < trade_signals.shape[0]:
+            trades.iloc[i + 1, 0] -= trades.iloc[i, 0]
 
     return trades
-
-if __name__ == "__main__":
-    # Example usage
-    df_trades = testPolicy(symbol="JPM", sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31), sv=100000)
-    print(df_trades.head())  # Print the first few trades to verify
