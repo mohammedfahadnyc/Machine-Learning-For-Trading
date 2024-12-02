@@ -90,17 +90,12 @@ def study_group():
     return "mfahad7"
 
 
-def compute_portvals(
-        orders_file="./orders/orders.csv",
-        start_val=1000000,
-        commission=9.95,
-        impact=0.005,
-):
+def compute_portvals(orders_file="./orders/orders.csv", start_val=1000000, commission=9.95, impact=0.005):
     """
     Simulates the portfolio values over time, given a set of trade orders.
 
-    :param orders_file: Path to the CSV file containing trade orders.
-    :type orders_file: str or file object
+    :param orders_file: Path to the CSV file containing trade orders or a DataFrame.
+    :type orders_file: str or pd.DataFrame
     :param start_val: Initial cash value in the portfolio.
     :type start_val: int
     :param commission: The fixed commission cost per trade.
@@ -108,52 +103,60 @@ def compute_portvals(
     :param impact: The market impact factor affecting prices when trading.
     :type impact: float
     :return: DataFrame with the portfolio values indexed by date.
-    :rtype: pandas.DataFrame
+    :rtype: pd.DataFrame
     """
 
-    # Reading orders file
-    orders_df = pd.read_csv(orders_file, index_col='Date', parse_dates=True)
+    # Read orders file
+    if isinstance(orders_file, pd.DataFrame):
+        orders_df = orders_file
+    else:
+        orders_df = pd.read_csv(orders_file, index_col='Date', parse_dates=True)
 
-    # simulation start and end  based on the orders file
+    # Simulation start and end dates
     start_date = orders_df.index.min()
     end_date = orders_df.index.max()
 
-    # list of symbols to trade
-    symbols = orders_df['Symbol'].unique()
+    # List of symbols to trade
+    symbols = list(orders_df['Symbol'].unique())
 
-    # price for all symbols
+    # Load price data for all symbols
     prices = get_data(symbols, pd.date_range(start_date, end_date))
-    prices['Cash'] = 1.0  # column for transaction tracking
+    prices = prices.ffill().bfill()  # Fill missing values
+    prices = prices.reindex(pd.date_range(orders_file.index.min(), orders_file.index.max())).ffill().bfill()
+    prices['Cash'] = 1.0  # Column for cash transactions
 
-    # trades and holdings df
+    # Initialize trades and holdings DataFrames
     trades = pd.DataFrame(0.0, index=prices.index, columns=prices.columns)
     holdings = pd.DataFrame(0.0, index=prices.index, columns=prices.columns)
-    holdings['Cash'].iloc[0] = start_val  # initial cash position
+    holdings.iloc[0]['Cash'] = start_val  # Set initial cash value
 
+    # Process each order
     for date, order in orders_df.iterrows():
         symbol = order['Symbol']
         shares = order['Shares']
         if order['Order'] == 'BUY':
             trade_impact = 1
-        else:
+        else:  # SELL
             trade_impact = -1
 
-        # adjusted close price for the stock
-        price = prices.at[date, symbol]
+        # Adjust price for market impact
+        if date in prices.index and symbol in prices.columns:
+            price = prices.at[date, symbol]
+        else:
+            raise KeyError(f"Date {date} or Symbol {symbol} not found in prices DataFrame.")
 
         adjusted_price = price * (1 + impact * trade_impact)
 
-        # update trades
+        # Update trades
         trade_cost = trade_impact * shares * adjusted_price
         trades.at[date, symbol] += trade_impact * shares
         trades.at[date, 'Cash'] -= (trade_cost + commission)
 
     # Update holdings
-    holdings.iloc[0] = holdings.iloc[0] + trades.iloc[0]
     for i in range(1, len(holdings)):
         holdings.iloc[i] = holdings.iloc[i - 1] + trades.iloc[i]
 
-    # portfolio values
+    # Calculate portfolio values
     portfolio_values = (holdings * prices).sum(axis=1)
 
     return pd.DataFrame(portfolio_values, columns=['Portfolio Value'])
